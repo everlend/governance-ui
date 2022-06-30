@@ -146,7 +146,7 @@ const EverlendDeposit = ({
       )
       router.push(url)
     } catch (e) {
-      console.log(e)
+      console.error(e)
     }
     setIsDepositing(false)
   }
@@ -186,7 +186,6 @@ const EverlendDeposit = ({
           </LinkButton>
         </div>
       </div>
-
       <Input
         type="number"
         onChange={(e) => setAmount(e.target.value)}

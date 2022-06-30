@@ -1,13 +1,13 @@
 import ButtonGroup from '@components/ButtonGroup'
 import { useEffect, useState } from 'react'
-import EverlendDeposit from './everlend/EverlendDeposit'
-import { TreasuryStrategy } from '../types/types'
-import { CreateEverlendProposal } from '../protocols/everlend/tools'
+import { TreasuryStrategy } from 'Strategies/types/types'
+import { CreateEverlendProposal } from 'Strategies/protocols/everlend/tools'
 import { AssetAccount } from '@utils/uiTypes/assets'
+import EverlendDeposit from './everlend/EverlendDeposit'
 import EverlendWithdraw from './everlend/EverlendWithdraw'
 import { findAssociatedTokenAccount } from '@everlend/common'
 import { PublicKey } from '@solana/web3.js'
-import useWalletStore from '../../stores/useWalletStore'
+import useWalletStore from 'stores/useWalletStore'
 
 enum Tabs {
   DEPOSIT = 'Deposit',

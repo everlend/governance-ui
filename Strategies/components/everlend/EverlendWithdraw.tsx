@@ -136,7 +136,7 @@ const EverlendWithdraw = ({
       )
       router.push(url)
     } catch (e) {
-      console.log(e)
+      console.error(e)
     }
     setIsWithdrawing(false)
   }
@@ -178,6 +178,7 @@ const EverlendWithdraw = ({
         onBlur={validateAmountOnBlur}
         error={formErrors['amount']}
       />
+
       <AdditionalProposalOptions
         title={proposalInfo.title}
         description={proposalInfo.description}

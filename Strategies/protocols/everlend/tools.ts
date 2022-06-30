@@ -1,4 +1,4 @@
-import { PublicKey, Transaction } from '@solana/web3.js'
+import { PublicKey, Transaction, TransactionInstruction } from '@solana/web3.js'
 import {
   getInstructionDataFromBase64,
   ProgramAccount,
@@ -33,12 +33,13 @@ const MARKET_MAIN = 'DzGDoJHdzUANM7P7V25t5nxqbvzRcHDmdhY51V6WNiXC'
 const MARKET_DEV = '4yC3cUWXQmoyyybfnENpxo33hiNxUNa1YAmmuxz93WAJ'
 const REGISTRY_DEV = '6KCHtgSGR2WDE3aqrqSJppHRGVPgy9fHDX5XD8VZgb61'
 const REGISTRY_MAIN = 'UaqUGgMvVzUZLthLHC9uuuBzgw5Ldesich94Wu5pMJg'
-const ENDPOINT = 'https://api.everlend.finance/api/v1/'
+const ENDPOINT_MAIN = 'https://api.everlend.finance/api/v1/'
+const ENDPOINT_DEV = 'https://dev-api.everlend.finance/api/v1/'
 export const EVERLEND = 'Everlend'
 
-async function getAPYs() {
+async function getAPYs(isDev = false) {
   const api = axios.create({
-    baseURL: ENDPOINT,
+    baseURL: isDev ? ENDPOINT_DEV : ENDPOINT_MAIN,
     timeout: 30000,
   })
 
@@ -46,16 +47,15 @@ async function getAPYs() {
 }
 
 async function getStrategies(connection: ConnectionContext) {
-  const POOL_MARKET_PUBKEY = new PublicKey(
-    connection.cluster === 'mainnet' ? MARKET_MAIN : MARKET_DEV
-  )
+  const isDev = connection.cluster === 'devnet'
+  const POOL_MARKET_PUBKEY = new PublicKey(isDev ? MARKET_DEV : MARKET_MAIN)
 
   try {
     const response = await Pool.findMany(connection.current, {
       poolMarket: POOL_MARKET_PUBKEY,
     })
 
-    const apys = await getAPYs()
+    const apys = await getAPYs(isDev)
 
     const strategies = response.map((pool) => {
       const { tokenMint, poolMint } = pool.data
@@ -82,7 +82,7 @@ async function getStrategies(connection: ConnectionContext) {
 
     return strategies
   } catch (e) {
-    console.log(e)
+    console.error(e)
   }
 }
 
@@ -114,10 +114,6 @@ export async function handleEverlendAction(
   const REGISTRY = new PublicKey(
     connection.cluster === 'mainnet' ? REGISTRY_MAIN : REGISTRY_DEV
   )
-  // const tokenMintPubKey = new PublicKey(form.tokenMint)
-  // const poolMintPubKey = new PublicKey(form.poolMint)
-  // const destination = await findAssociatedTokenAccount(owner, poolMintPubKey)
-  // const source = await findAssociatedTokenAccount(owner, tokenMintPubKey)
 
   const ctokenATA = await Token.getAssociatedTokenAddress(
     ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -139,28 +135,16 @@ export async function handleEverlendAction(
   const cleanupInsts: InstructionDataWithHoldUpTime[] = []
 
   if (form.action === 'Deposit') {
-    let actionTx: Transaction
-    if (isSol) {
-      const { tx: depositTx } = await prepareSolDepositTx(
-        { connection: connection.current, payerPublicKey: owner },
-        new PublicKey(form.poolPubKey),
-        REGISTRY,
-        form.bnAmount,
-        ctokenATA,
-        liquidityATA
-      )
-      actionTx = depositTx
-    } else {
-      const { tx: depositTx } = await prepareDepositTx(
-        { connection: connection.current, payerPublicKey: owner },
-        new PublicKey(form.poolPubKey),
-        REGISTRY,
-        form.bnAmount,
-        ctokenATA
-      )
-      actionTx = depositTx
-    }
-
+    const actionTx = await handleEverlendDeposit(
+      Boolean(isSol),
+      connection,
+      owner,
+      REGISTRY,
+      form.poolPubKey,
+      form.bnAmount,
+      ctokenATA,
+      liquidityATA
+    )
     actionTx.instructions.map((instruction) => {
       insts.push({
         data: getInstructionDataFromBase64(
@@ -172,19 +156,18 @@ export async function handleEverlendAction(
       })
     })
   } else if (form.action === 'Withdraw') {
-    const { tx: withdrawslTx } = await prepareWithdrawalRequestTx(
-      {
-        connection: connection.current,
-        payerPublicKey: owner,
-      },
-      new PublicKey(form.poolPubKey),
+    const { withdrawTx, closeIx } = await handleEverlendWithdraw(
+      Boolean(isSol),
+      connection,
+      owner,
       REGISTRY,
+      form.poolPubKey,
       form.bnAmount,
       liquidityATA,
-      isSol ? owner : undefined
+      ctokenATA
     )
 
-    withdrawslTx.instructions.map((instruction) => {
+    withdrawTx.instructions.map((instruction) => {
       insts.push({
         data: getInstructionDataFromBase64(
           serializeInstructionToBase64(instruction)
@@ -196,17 +179,10 @@ export async function handleEverlendAction(
       })
     })
 
-    if (isSol) {
-      const closeWSOLAccountIx = Token.createCloseAccountInstruction(
-        TOKEN_PROGRAM_ID,
-        ctokenATA,
-        owner,
-        owner,
-        []
-      )
+    if (closeIx) {
       cleanupInsts.push({
         data: getInstructionDataFromBase64(
-          serializeInstructionToBase64(closeWSOLAccountIx)
+          serializeInstructionToBase64(closeIx)
         ),
         holdUpTime: matchedTreasury.governance!.account!.config
           .minInstructionHoldUpTime,
@@ -230,6 +206,80 @@ export async function handleEverlendAction(
     client
   )
   return proposalAddress
+}
+
+async function handleEverlendDeposit(
+  isSol: boolean,
+  connection: ConnectionContext,
+  owner: PublicKey,
+  REGISTRY: PublicKey,
+  poolPubKey: string,
+  amount: BN,
+  source: PublicKey,
+  destination: PublicKey
+) {
+  let actionTx: Transaction
+  if (isSol) {
+    const { tx: depositTx } = await prepareSolDepositTx(
+      { connection: connection.current, payerPublicKey: owner },
+      new PublicKey(poolPubKey),
+      REGISTRY,
+      amount,
+      source,
+      destination
+    )
+    actionTx = depositTx
+  } else {
+    const { tx: depositTx } = await prepareDepositTx(
+      { connection: connection.current, payerPublicKey: owner },
+      new PublicKey(poolPubKey),
+      REGISTRY,
+      amount,
+      source
+    )
+    actionTx = depositTx
+  }
+  return actionTx
+}
+
+async function handleEverlendWithdraw(
+  isSol: boolean,
+  connection: ConnectionContext,
+  owner: PublicKey,
+  REGISTRY: PublicKey,
+  poolPubKey: string,
+  amount: BN,
+  source: PublicKey,
+  destination: PublicKey
+) {
+  const { tx: withdrawslTx } = await prepareWithdrawalRequestTx(
+    {
+      connection: connection.current,
+      payerPublicKey: owner,
+    },
+    new PublicKey(poolPubKey),
+    REGISTRY,
+    amount,
+    source,
+    isSol ? owner : undefined
+  )
+  const withdrawTx = withdrawslTx
+  let closeIx: TransactionInstruction | undefined
+  if (isSol) {
+    const closeWSOLAccountIx = Token.createCloseAccountInstruction(
+      TOKEN_PROGRAM_ID,
+      destination,
+      owner,
+      owner,
+      []
+    )
+    closeIx = closeWSOLAccountIx
+  }
+
+  return {
+    withdrawTx,
+    closeIx: closeIx ?? null,
+  }
 }
 
 export async function getEverlendStrategies(
