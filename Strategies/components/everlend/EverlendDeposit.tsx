@@ -148,6 +148,7 @@ const EverlendDeposit = ({
         governedTokenAccount!.governance!.account!.proposalCount,
         false,
         connection,
+        wallet!,
         client
       )
       const url = fmtUrlWithCluster(
