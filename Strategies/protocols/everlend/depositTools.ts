@@ -199,13 +199,15 @@ export async function handleEverlendAction(
   const REGISTRY = new PublicKey(isMainnet ? REGISTRY_MAIN : REGISTRY_DEV)
   const CONFIG = new PublicKey(isMainnet ? CONFIG_MAINNET : CONFIG_DEVNET)
 
-  const ctokenATA = await Token.getAssociatedTokenAddress(
-    ASSOCIATED_TOKEN_PROGRAM_ID,
-    TOKEN_PROGRAM_ID,
-    new PublicKey(form.tokenMint),
-    owner,
-    true
-  )
+  const ctokenATA = isSol
+    ? await Token.getAssociatedTokenAddress(
+        ASSOCIATED_TOKEN_PROGRAM_ID,
+        TOKEN_PROGRAM_ID,
+        new PublicKey(form.tokenMint),
+        owner,
+        true
+      )
+    : matchedTreasury.pubkey
 
   const liquidityATA = await Token.getAssociatedTokenAddress(
     ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -228,39 +230,12 @@ export async function handleEverlendAction(
     REWARD_PROGRAM_ID
   )
 
-  const rewardPoolInfo = await connection.current.getAccountInfo(rewardPool)
-  const rewardAccountInfo = await connection.current.getAccountInfo(
-    rewardAccount
-  )
-
-  if (!rewardAccountInfo && rewardPoolInfo?.data) {
-    const initMiningTx = await getInitMiningTx(
-      rewardPool,
-      rewardAccount,
-      owner,
-      connection,
-      wallet
-    )
-    initMiningTx.instructions.map((instruction) => {
-      insts.push({
-        data: getInstructionDataFromBase64(
-          serializeInstructionToBase64(instruction)
-        ),
-        holdUpTime: matchedTreasury.governance!.account!.config
-          .minInstructionHoldUpTime,
-        prerequisiteInstructions: [],
-      })
-    })
-  }
-
-  console.log('rewardPool', rewardPoolInfo)
-  console.log('rewardAccount', rewardAccountInfo)
-
   const setupInsts: InstructionDataWithHoldUpTime[] = []
   const cleanupInsts: InstructionDataWithHoldUpTime[] = []
 
   if (form.action === 'Deposit') {
     const actionTx = await handleEverlendDeposit(
+      wallet!,
       Boolean(isSol),
       connection,
       owner,
@@ -328,6 +303,7 @@ export async function handleEverlendAction(
 }
 
 async function handleEverlendDeposit(
+  wallet: SignerWalletAdapter,
   isSol: boolean,
   connection: ConnectionContext,
   owner: PublicKey,
@@ -340,7 +316,30 @@ async function handleEverlendDeposit(
   source: PublicKey,
   destination: PublicKey
 ) {
-  let actionTx: Transaction
+  const actionTx = new Transaction()
+
+  const rewardPoolInfo = await connection.current.getAccountInfo(rewardPool)
+  const rewardAccountInfo = await connection.current.getAccountInfo(
+    rewardAccount
+  )
+
+  console.log('rewardPool', rewardPoolInfo)
+  console.log('rewardAccount', rewardAccountInfo)
+
+  console.log('owner', owner.toString())
+
+  if (!rewardAccountInfo && rewardPoolInfo?.data) {
+    const initMiningTx = await getInitMiningTx(
+      rewardPool,
+      rewardAccount,
+      wallet.publicKey!,
+      owner,
+      connection,
+      wallet
+    )
+
+    // actionTx.add(initMiningTx)
+  }
   if (isSol) {
     const { tx: depositTx } = await prepareSolDepositTx(
       { connection: connection.current, payerPublicKey: owner },
@@ -354,7 +353,7 @@ async function handleEverlendDeposit(
       source,
       destination
     )
-    actionTx = depositTx
+    actionTx.add(depositTx)
   } else {
     const { tx: depositTx } = await prepareDepositTx(
       { connection: connection.current, payerPublicKey: owner },
@@ -367,7 +366,7 @@ async function handleEverlendDeposit(
       rewardAccount,
       source
     )
-    actionTx = depositTx
+    actionTx.add(depositTx)
   }
   return actionTx
 }

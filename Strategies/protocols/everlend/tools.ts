@@ -1,4 +1,4 @@
-import { PublicKey } from '@solana/web3.js'
+import { LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js'
 import {
   ProgramAccount,
   Realm,
@@ -79,6 +79,10 @@ export async function getEverlendStrategies(
   const strategies = await getStrategies(connection)
 
   return strategies
+}
+
+export const lamportsToSol = (value: number): number => {
+  return value / LAMPORTS_PER_SOL
 }
 
 export type CreateEverlendProposal = (

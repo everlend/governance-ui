@@ -15,6 +15,7 @@ const getInitMiningTx = async (
   rewardPool: PublicKey,
   rewardAccount: PublicKey,
   walletPubKey: PublicKey,
+  owner: PublicKey,
   connection: ConnectionContext,
   wallet: SignerWalletAdapter
 ): Promise<Transaction> => {
@@ -39,7 +40,7 @@ const getInitMiningTx = async (
         config: CONFIG,
         rewardPool,
         mining: rewardAccount,
-        user: walletPubKey,
+        user: owner,
         payer: walletPubKey,
         systemProgram: SystemProgram.programId,
         rent: SYSVAR_RENT_PUBKEY,
