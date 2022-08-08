@@ -469,6 +469,8 @@ export enum Instructions {
   DeactivateValidatorStake,
   WithdrawValidatorStake,
   DifferValidatorStake,
+  EverlendDeposit,
+  EverlendWithdraw,
 }
 
 export type createParams = [

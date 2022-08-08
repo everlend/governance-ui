@@ -21,11 +21,9 @@ import {
 } from '@everlend/common'
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
-  NATIVE_MINT,
   Token,
   TOKEN_PROGRAM_ID,
 } from '@solana/spl-token'
-import { syncNative } from '@solendprotocol/solend-sdk'
 import {
   getInstructionDataFromBase64,
   ProgramAccount,
@@ -115,20 +113,8 @@ export const prepareSolDepositTx = async (
 
   tx.add(transferLamportsIx)
 
-  if (!userWSOLAccountInfo) {
-    const createUserWSOLAccountIx = Token.createAssociatedTokenAccountInstruction(
-      ASSOCIATED_TOKEN_PROGRAM_ID,
-      TOKEN_PROGRAM_ID,
-      NATIVE_MINT,
-      source,
-      payerPublicKey,
-      payerPublicKey
-    )
-    tx.add(createUserWSOLAccountIx)
-  } else {
-    const syncIx = syncNative(source)
-    tx.add(syncIx)
-  }
+  // const syncIx = syncNative(source)
+  // tx.add(syncIx)
 
   // Create destination account for pool mint if doesn't exist
   destination =
@@ -234,7 +220,7 @@ export async function handleEverlendAction(
   const cleanupInsts: InstructionDataWithHoldUpTime[] = []
 
   if (form.action === 'Deposit') {
-    const actionTx = await handleEverlendDeposit(
+    const { actionTx, initMiningTx } = await handleEverlendDeposit(
       wallet!,
       Boolean(isSol),
       connection,
@@ -256,8 +242,23 @@ export async function handleEverlendAction(
         holdUpTime: matchedTreasury.governance!.account!.config
           .minInstructionHoldUpTime,
         prerequisiteInstructions: [],
+        chunkSplitByDefault: true,
       })
     })
+
+    if (isSol && initMiningTx) {
+      initMiningTx.instructions.map((instruction) => {
+        setupInsts.push({
+          data: getInstructionDataFromBase64(
+            serializeInstructionToBase64(instruction)
+          ),
+          holdUpTime: matchedTreasury.governance!.account!.config
+            .minInstructionHoldUpTime,
+          prerequisiteInstructions: [],
+          chunkSplitByDefault: true,
+        })
+      })
+    }
   } else if (form.action === 'Withdraw') {
     const { withdrawTx } = await handleEverlendWithdraw(
       Boolean(isSol),
@@ -286,20 +287,41 @@ export async function handleEverlendAction(
     })
   }
 
-  const proposalAddress = await createProposal(
-    rpcContext,
-    realm,
-    matchedTreasury.governance!.pubkey,
-    tokenOwnerRecord,
-    form.title,
-    form.description,
-    governingTokenMint,
-    proposalIndex,
-    [...setupInsts, ...insts, ...cleanupInsts],
-    isDraft,
-    client
-  )
-  return proposalAddress
+  const proposalsAdresses: PublicKey[] = []
+
+  if (setupInsts.length) {
+    const setupProposalAddress = await createProposal(
+      rpcContext,
+      realm,
+      matchedTreasury.governance!.pubkey,
+      tokenOwnerRecord,
+      'Setup init mining for Everlend SOL pool',
+      'You need to sign init mining tx before you create deposit proposal',
+      governingTokenMint,
+      proposalIndex,
+      [...setupInsts],
+      isDraft,
+      client
+    )
+    proposalsAdresses.push(setupProposalAddress)
+  } else {
+    const proposalAddress = await createProposal(
+      rpcContext,
+      realm,
+      matchedTreasury.governance!.pubkey,
+      tokenOwnerRecord,
+      form.title,
+      form.description,
+      governingTokenMint,
+      proposalIndex,
+      [...insts, ...cleanupInsts],
+      isDraft,
+      client
+    )
+    proposalsAdresses.push(proposalAddress)
+  }
+
+  return proposalsAdresses
 }
 
 async function handleEverlendDeposit(
@@ -317,6 +339,7 @@ async function handleEverlendDeposit(
   destination: PublicKey
 ) {
   const actionTx = new Transaction()
+  const initMiningTx = new Transaction()
 
   const rewardPoolInfo = await connection.current.getAccountInfo(rewardPool)
   const rewardAccountInfo = await connection.current.getAccountInfo(
@@ -329,7 +352,7 @@ async function handleEverlendDeposit(
   console.log('owner', owner.toString())
 
   if (!rewardAccountInfo && rewardPoolInfo?.data) {
-    const initMiningTx = await getInitMiningTx(
+    const initTx = await getInitMiningTx(
       rewardPool,
       rewardAccount,
       wallet.publicKey!,
@@ -338,7 +361,7 @@ async function handleEverlendDeposit(
       wallet
     )
 
-    // actionTx.add(initMiningTx)
+    initMiningTx.add(initTx)
   }
   if (isSol) {
     const { tx: depositTx } = await prepareSolDepositTx(
@@ -366,9 +389,11 @@ async function handleEverlendDeposit(
       rewardAccount,
       source
     )
+    actionTx.add(initMiningTx)
     actionTx.add(depositTx)
   }
-  return actionTx
+
+  return isSol ? { actionTx, initMiningTx } : { actionTx }
 }
 
 async function handleEverlendWithdraw(
