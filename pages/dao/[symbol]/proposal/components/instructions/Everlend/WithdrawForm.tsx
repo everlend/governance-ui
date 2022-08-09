@@ -19,10 +19,7 @@ import useWalletStore from 'stores/useWalletStore'
 import { NewProposalContext } from '../../../new'
 import GovernedAccountSelect from '../../GovernedAccountSelect'
 import useGovernanceAssets from '@hooks/useGovernanceAssets'
-import {
-  handleEverlendDeposit,
-  handleEverlendWithdraw,
-} from 'Strategies/protocols/everlend/depositTools'
+import { handleEverlendWithdraw } from 'Strategies/protocols/everlend/depositTools'
 import { getEverlendStrategies } from 'Strategies/protocols/everlend/tools'
 import {
   CONFIG_MAINNET,
