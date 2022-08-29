@@ -2,6 +2,7 @@ import ButtonGroup from '@components/ButtonGroup'
 import { useEffect, useState } from 'react'
 import { TreasuryStrategy } from 'Strategies/types/types'
 import {
+  calcUserTokenBalanceByPoolToken,
   CreateEverlendProposal,
   lamportsToSol,
 } from 'Strategies/protocols/everlend/tools'
@@ -18,7 +19,12 @@ enum Tabs {
 }
 
 interface IProps {
-  proposedInvestment: TreasuryStrategy & { poolMint: string }
+  proposedInvestment: TreasuryStrategy & {
+    poolMint: string
+    rateEToken: number
+    decimals: number
+    poolPubKey: string
+  }
   handledMint: string
   createProposalFcn: CreateEverlendProposal
   governedTokenAccount: AssetAccount
@@ -55,7 +61,13 @@ const EverlendModalContent = ({
         const fetchedTokenMintATABalance = await connection.current.getTokenAccountBalance(
           tokenMintATA
         )
-        tokenMintATABalance = Number(fetchedTokenMintATABalance.value.uiAmount)
+
+        tokenMintATABalance = calcUserTokenBalanceByPoolToken(
+          Number(fetchedTokenMintATABalance.value.uiAmount),
+          proposedInvestment.decimals,
+          proposedInvestment.rateEToken,
+          false
+        )
       } catch (e) {
         console.log(e)
       }
@@ -63,7 +75,6 @@ const EverlendModalContent = ({
         if (isSol) {
           const fetchedBalance = await connection.current.getBalance(owner)
           poolMintATABalance = lamportsToSol(fetchedBalance)
-          console.log(owner.toString())
         } else {
           const fetchedBalance = await connection.current.getTokenAccountBalance(
             governedTokenAccount!.pubkey
