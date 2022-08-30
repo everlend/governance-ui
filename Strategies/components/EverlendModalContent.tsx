@@ -47,22 +47,22 @@ const EverlendModalContent = ({
     ? governedTokenAccount!.pubkey
     : governedTokenAccount!.extensions!.token!.account.owner
 
-  console.log('proposed', governedTokenAccount!.pubkey.toString())
-
   useEffect(() => {
     const loadMaxAmount = async () => {
-      const tokenMintATA = await findAssociatedTokenAccount(
+      console.log('owner', owner.toString())
+      const poolMintATA = await findAssociatedTokenAccount(
         owner,
         new PublicKey(proposedInvestment.poolMint)
       )
+      console.log('tokenmintata', poolMintATA.toString())
       let poolMintATABalance = 0
       let tokenMintATABalance = 0
       try {
         const fetchedTokenMintATABalance = await connection.current.getTokenAccountBalance(
-          tokenMintATA
+          poolMintATA
         )
 
-        tokenMintATABalance = calcUserTokenBalanceByPoolToken(
+        poolMintATABalance = calcUserTokenBalanceByPoolToken(
           Number(fetchedTokenMintATABalance.value.uiAmount),
           proposedInvestment.decimals,
           proposedInvestment.rateEToken,
@@ -74,18 +74,18 @@ const EverlendModalContent = ({
       try {
         if (isSol) {
           const fetchedBalance = await connection.current.getBalance(owner)
-          poolMintATABalance = lamportsToSol(fetchedBalance)
+          tokenMintATABalance = lamportsToSol(fetchedBalance)
         } else {
           const fetchedBalance = await connection.current.getTokenAccountBalance(
             governedTokenAccount!.pubkey
           )
-          poolMintATABalance = Number(fetchedBalance.value.uiAmount)
+          tokenMintATABalance = Number(fetchedBalance.value.uiAmount)
         }
       } catch (e) {
         console.log(e)
       }
-      setDepositedAmount(tokenMintATABalance)
-      setMaxDepositAmount(poolMintATABalance)
+      setDepositedAmount(poolMintATABalance)
+      setMaxDepositAmount(tokenMintATABalance)
     }
     loadMaxAmount()
   }, [proposedInvestment, handledMint])
