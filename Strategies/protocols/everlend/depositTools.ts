@@ -45,9 +45,10 @@ import {
   REGISTRY_MAIN,
   REWARD_PROGRAM_ID,
 } from './constants'
-import { getInitMiningTx } from './useRewardProgram'
+import { getInitMiningTx } from './useInitMining'
 import { SignerWalletAdapter } from '@solana/wallet-adapter-base'
 import { syncNative } from '@solendprotocol/solend-sdk'
+import { InitializeMining } from '@everlend/general-pool/dist/transactions/initializeMiningTx'
 
 export type ActionOptions = {
   /** the JSON RPC connection instance. */
@@ -148,8 +149,6 @@ export const prepareSolDepositTx = async (
         poolMint,
         rewardPool,
         rewardAccount,
-        config,
-        rewardProgramId,
         poolMarketAuthority,
         amount,
       }
@@ -333,16 +332,8 @@ export async function handleEverlendDeposit(
     rewardAccount
   )
 
-  if (!rewardAccountInfo && rewardPoolInfo?.data) {
-    const initTx = await getInitMiningTx(
-      rewardPool,
-      rewardAccount,
-      wallet.publicKey!,
-      owner,
-      connection,
-      wallet,
-      CONFIG
-    )
+  if (!rewardAccountInfo && rewardPoolInfo?.data && wallet.publicKey) {
+    const initTx = await getInitMiningTx(owner, connection.current, rewardPool)
     initMiningTx.add(initTx)
     prerequisiteInstructions.push(...initTx.instructions)
   }
@@ -366,8 +357,6 @@ export async function handleEverlendDeposit(
       { connection: connection.current, payerPublicKey: owner },
       new PublicKey(poolPubKey),
       amount,
-      REWARD_PROGRAM_ID,
-      CONFIG,
       rewardPool,
       rewardAccount,
       source
@@ -398,8 +387,6 @@ export async function handleEverlendWithdraw(
     },
     new PublicKey(poolPubKey),
     amount,
-    REWARD_PROGRAM_ID,
-    CONFIG,
     rewardPool,
     rewardAccount,
     source,
